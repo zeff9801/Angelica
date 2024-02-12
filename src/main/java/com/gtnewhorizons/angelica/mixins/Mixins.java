@@ -79,6 +79,7 @@ public enum Mixins {
             ,"shaders.startup.MixinInitRenderer"
             ,"shaders.startup.MixinAbstractTexture"
             ,"shaders.startup.MixinTextureAtlasSprite"
+            ,"shaders.startup.MixinTextureMap"
         )
     ),
 
@@ -105,6 +106,7 @@ public enum Mixins {
             ,"sodium.MixinRenderGlobal"
             ,"sodium.MixinWorldClient"
             ,"sodium.MixinTessellator"
+            ,"sodium.MixinTileEntity"
             ,"sodium.MixinGuiIngameForge"
             ,"sodium.MixinEffectRenderer"
             ,"sodium.MixinTileEntityRendererDispatcher"
@@ -451,6 +453,17 @@ public enum Mixins {
                 || MCPatcherForgeConfig.instance().customColorsEnabled))
         .addTargetedMod(TargetedMod.VANILLA)
         .addMixinClasses("mcpatcherforge.ctm_cc.MixinTextureMap")),
+
+    NOVIS_OCULIS(new Builder("Non-Tessellator Quad provider")
+        .setSide(Side.CLIENT)
+        .setPhase(Phase.EARLY)
+        .setApplyIf(() -> AngelicaConfig.injectQPRendering)
+        .addTargetedMod(TargetedMod.VANILLA)
+        .addMixinClasses(
+            "angelica.models.MixinBlockStone",
+            "angelica.models.MixinBlockAir",
+            "angelica.models.MixinBlockWorkbench",
+            "angelica.models.MixinBlockLeaves")),
 
     ;
 

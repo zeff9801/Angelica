@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
 
 import static com.gtnewhorizons.angelica.transform.BlockTransformer.BlockBoundsFields;
 import static com.gtnewhorizons.angelica.transform.BlockTransformer.BlockClass;
+import static com.gtnewhorizons.angelica.transform.BlockTransformer.BlockPackage;
 
 /**
  * This transformer redirects all Tessellator.instance field accesses to go through our TessellatorManager.
@@ -50,6 +51,7 @@ public class RedirectorTransformer implements IClassTransformer {
     private static final String GL11 = "org/lwjgl/opengl/GL11";
     private static final String GL13 = "org/lwjgl/opengl/GL13";
     private static final String GL14 = "org/lwjgl/opengl/GL14";
+    private static final String GL20 = "org/lwjgl/opengl/GL20";
     private static final String Project = "org/lwjgl/util/glu/Project";
 
     private static final String OpenGlHelper = "net/minecraft/client/renderer/OpenGlHelper";
@@ -63,8 +65,16 @@ public class RedirectorTransformer implements IClassTransformer {
         "startGame", "func_71384_a",
         "initializeTextures", "func_77474_a"
     );
+    /** All classes in <tt>net.minecraft.block.*</tt> are the block subclasses save for these. */
+    private static final List<String> VanillaBlockExclusions = Arrays.asList(
+        "net/minecraft/block/IGrowable",
+        "net/minecraft/block/ITileEntityProvider",
+        "net/minecraft/block/BlockEventData",
+        "net/minecraft/block/BlockSourceImpl",
+        "net/minecraft/block/material/"
+    );
 
-    private static final ClassConstantPoolParser cstPoolParser = new ClassConstantPoolParser(GL11, GL13, GL14, OpenGlHelper, EXTBlendFunc, ARBMultiTexture, TessellatorClass, BlockClass,
+    private static final ClassConstantPoolParser cstPoolParser = new ClassConstantPoolParser(GL11, GL13, GL14, OpenGlHelper, EXTBlendFunc, ARBMultiTexture, TessellatorClass, BlockPackage,
         Project);
     private static final Map<String, Map<String, String>> methodRedirects = new HashMap<>();
     private static final Map<Integer, String> glCapRedirects = new HashMap<>();
@@ -76,7 +86,7 @@ public class RedirectorTransformer implements IClassTransformer {
     );
     private static int remaps = 0;
 
-    private static final Set<String> blockSubclasses = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static final Set<String> moddedBlockSubclasses = Collections.newSetFromMap(new ConcurrentHashMap<>());
     // Block owners we *shouldn't* redirect because they shadow one of our fields
     private static final Set<String> blockOwnerExclusions = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
@@ -95,7 +105,9 @@ public class RedirectorTransformer implements IClassTransformer {
             .add("glBindTexture")
             .add("glBlendFunc")
             .add("glCallList")
+            .add("glClear")
             .add("glClearColor")
+            .add("glClearDepth")
             .add("glColor3b")
             .add("glColor3d")
             .add("glColor3f")
@@ -105,10 +117,13 @@ public class RedirectorTransformer implements IClassTransformer {
             .add("glColor4f")
             .add("glColor4ub")
             .add("glColorMask")
+            .add("glColorMaterial")
             .add("glDeleteTextures")
             .add("glDepthFunc")
             .add("glDepthMask")
             .add("glDrawArrays")
+            .add("glDrawBuffer")
+            .add("glEdgeFlag")
             .add("glEndList")
             .add("glFog")
             .add("glFogf")
@@ -117,42 +132,92 @@ public class RedirectorTransformer implements IClassTransformer {
             .add("glGetBoolean")
             .add("glGetFloat")
             .add("glGetInteger")
+            .add("glGetLight")
             .add("glGetTexLevelParameteri")
             .add("glGetTexParameterf")
             .add("glGetTexParameteri")
             .add("glIsEnabled")
+            .add("glLight")
+            .add("glLightModel")
+            .add("glLightModelf")
+            .add("glLightModeli")
             .add("glLoadIdentity")
+            .add("glLoadMatrix")
+            .add("glLogicOp")
             .add("glMatrixMode")
             .add("glMultMatrix")
             .add("glNewList")
+            .add("glNormal3b")
+            .add("glNormal3d")
+            .add("glNormal3f")
+            .add("glNormal3i")
             .add("glOrtho")
             .add("glPopAttrib")
             .add("glPopMatrix")
             .add("glPushAttrib")
             .add("glPushMatrix")
+            .add("glRasterPos2d")
+            .add("glRasterPos2f")
+            .add("glRasterPos2i")
+            .add("glRasterPos3d")
+            .add("glRasterPos3f")
+            .add("glRasterPos3i")
+            .add("glRasterPos4d")
+            .add("glRasterPos4f")
+            .add("glRasterPos4i")
             .add("glRotated")
             .add("glRotatef")
             .add("glScaled")
             .add("glScalef")
+            .add("glShadeModel")
+            .add("glTexCoord1d")
+            .add("glTexCoord1f")
+            .add("glTexCoord2d")
+            .add("glTexCoord2f")
+            .add("glTexCoord3d")
+            .add("glTexCoord3f")
+            .add("glTexCoord4d")
+            .add("glTexCoord4f")
+            .add("glTexImage2D")
             .add("glTexParameter")
             .add("glTexParameterf")
             .add("glTexParameteri")
-            .add("glShadeModel")
-            .add("glTexImage2D")
             .add("glTexParameteri")
             .add("glTranslated")
             .add("glTranslatef")
             .add("glViewport")
         );
         methodRedirects.put(GL13, RedirectMap.newMap().add("glActiveTexture"));
-        methodRedirects.put(GL14, RedirectMap.newMap().add("glBlendFuncSeparate", "tryBlendFuncSeparate"));
+        methodRedirects.put(GL14, RedirectMap.newMap()
+            .add("glBlendFuncSeparate", "tryBlendFuncSeparate")
+            .add("glBlendColor")
+            .add("glBlendEquation")
+        );
+        methodRedirects.put(GL20, RedirectMap.newMap()
+            .add("glBlendEquationSeparate")
+        );
         methodRedirects.put(OpenGlHelper, RedirectMap.newMap()
             .add("glBlendFunc", "tryBlendFuncSeparate")
             .add("func_148821_a", "tryBlendFuncSeparate"));
         methodRedirects.put(EXTBlendFunc, RedirectMap.newMap().add("glBlendFuncSeparateEXT", "tryBlendFuncSeparate"));
         methodRedirects.put(ARBMultiTexture, RedirectMap.newMap().add("glActiveTextureARB"));
         methodRedirects.put(Project, RedirectMap.newMap().add("gluPerspective"));
-        blockSubclasses.add(BlockClass);
+    }
+
+    private boolean isVanillaBlockSubclass(String className) {
+        if(className.startsWith(BlockTransformer.BlockPackage)) {
+            for(String exclusion : VanillaBlockExclusions) {
+                if(className.startsWith(exclusion)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isBlockSubclass(String className) {
+        return isVanillaBlockSubclass(className) || moddedBlockSubclasses.contains(className);
     }
 
     @Override
@@ -167,7 +232,7 @@ public class RedirectorTransformer implements IClassTransformer {
             }
         }
 
-        if (!cstPoolParser.find(basicClass)) {
+        if (!cstPoolParser.find(basicClass, true)) {
             return basicClass;
         }
 
@@ -176,19 +241,17 @@ public class RedirectorTransformer implements IClassTransformer {
         cr.accept(cn, 0);
 
         // Track subclasses of Block
-        if (blockSubclasses.contains(cn.superName)) {
-            blockSubclasses.add(cn.name);
+        if (!isVanillaBlockSubclass(cn.name) && isBlockSubclass(cn.superName)) {
+            moddedBlockSubclasses.add(cn.name);
             cstPoolParser.addString(cn.name);
         }
 
         // Check if this class shadows any fields of the parent class
-        if(blockSubclasses.contains(cn.name)) {
+        if(moddedBlockSubclasses.contains(cn.name)) {
             // If a superclass shadows, then so do we, because JVM will resolve a reference on our class to that
             // superclass
             boolean doWeShadow;
-            if(cn.name.equals(BlockClass)) {
-                doWeShadow = false; // by definition
-            } else if(blockOwnerExclusions.contains(cn.superName)) {
+            if(blockOwnerExclusions.contains(cn.superName)) {
                 doWeShadow = true;
             } else {
                 // Check if we declare any known field names
@@ -274,7 +337,7 @@ public class RedirectorTransformer implements IClassTransformer {
                     }
                 }
                 else if ((node.getOpcode() == Opcodes.GETFIELD || node.getOpcode() == Opcodes.PUTFIELD) && node instanceof FieldInsnNode fNode) {
-                    if(!blockOwnerExclusions.contains(fNode.owner) && blockSubclasses.contains(fNode.owner) && AngelicaConfig.enableSodium) {
+                    if(!blockOwnerExclusions.contains(fNode.owner) && isBlockSubclass(fNode.owner) && AngelicaConfig.enableSodium) {
                         Pair<String, String> fieldToRedirect = null;
                         for(Pair<String, String> blockPairs : BlockBoundsFields) {
                             if(fNode.name.equals(blockPairs.getLeft()) || fNode.name.equals(blockPairs.getRight())) {
